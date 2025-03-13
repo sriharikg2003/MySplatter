@@ -5,7 +5,7 @@ import torchvision
 import numpy as np
 import torch
 from torch.nn.functional import silu
-
+import torch.nn.functional as F
 from einops import rearrange, repeat
 
 from utils.general_utils import matrix_to_quaternion, quaternion_raw_multiply
@@ -423,6 +423,8 @@ class SongUNet(nn.Module):
                     # but it's not good for gradient flow and background features
                     x = torch.cat([x, skips.pop()], dim=1)
                 x = block(x, emb=emb, N_views_xa=N_views_xa)
+
+
         return aux
 
 # ================== End of implementation taken from EDM ===============
@@ -448,25 +450,38 @@ class SingleImageSongUNetPredictor(nn.Module):
                                 emb_dim_in=emb_dim_in,
                                 channel_mult_noise=0,
                                 attn_resolutions=cfg.model.attention_resolutions)
-        self.out = nn.Conv2d(in_channels=sum(out_channels), 
-                                 out_channels=sum(out_channels),
-                                 kernel_size=1)
+        
 
+        # self.out = nn.Conv2d(in_channels=sum(out_channels), 
+        #                          out_channels=sum(out_channels),
+        #                          kernel_size=1)
+        self.out_double = nn.ConvTranspose2d(in_channels=sum(out_channels), 
+                                        out_channels=sum(out_channels),
+                                        kernel_size=2,
+                                        stride=2)
         start_channels = 0
+        # for out_channel, b, s in zip(out_channels, bias, scale):
+        #     nn.init.xavier_uniform_(
+        #         self.out.weight[start_channels:start_channels+out_channel,
+        #                         :, :, :], s)
+        #     nn.init.constant_(
+        #         self.out.bias[start_channels:start_channels+out_channel], b)
+        #     start_channels += out_channel
         for out_channel, b, s in zip(out_channels, bias, scale):
             nn.init.xavier_uniform_(
-                self.out.weight[start_channels:start_channels+out_channel,
+                self.out_double.weight[start_channels:start_channels+out_channel,
                                 :, :, :], s)
             nn.init.constant_(
-                self.out.bias[start_channels:start_channels+out_channel], b)
+                self.out_double.bias[start_channels:start_channels+out_channel], b)
             start_channels += out_channel
 
     def forward(self, x, film_camera_emb=None, N_views_xa=1):
+
         x = self.encoder(x, 
                          film_camera_emb=film_camera_emb,
                          N_views_xa=N_views_xa)
-
-        return self.out(x)
+        # return self.out(x)
+        return self.out_double(x)
 
 def networkCallBack(cfg, name, out_channels, **kwargs):
     if name == "SingleUNet":
@@ -524,12 +539,12 @@ class GaussianSplatPredictor(nn.Module):
         self.register_buffer('v_to_sh_transform', v_to_sh_transform.unsqueeze(0))
 
     def init_ray_dirs(self):
-        x = torch.linspace(-self.cfg.data.training_resolution // 2 + 0.5, 
-                            self.cfg.data.training_resolution // 2 - 0.5, 
-                            self.cfg.data.training_resolution) 
-        y = torch.linspace( self.cfg.data.training_resolution // 2 - 0.5, 
-                           -self.cfg.data.training_resolution // 2 + 0.5, 
-                            self.cfg.data.training_resolution)
+        x = torch.linspace(-self.cfg.data.training_resolution*2 // 2 + 0.5, 
+                            self.cfg.data.training_resolution*2 // 2 - 0.5, 
+                            self.cfg.data.training_resolution*2) 
+        y = torch.linspace( self.cfg.data.training_resolution*2 // 2 - 0.5, 
+                           -self.cfg.data.training_resolution*2 // 2 + 0.5, 
+                            self.cfg.data.training_resolution*2)
         if self.cfg.model.inverted_x:
             x = -x
         if self.cfg.model.inverted_y:
@@ -675,11 +690,12 @@ class GaussianSplatPredictor(nn.Module):
         # depth and offsets are shaped as (b 3 h w)
         if const_offset is not None:
             depth = self.depth_act(depth_network) * (self.cfg.data.zfar - self.cfg.data.znear) + self.cfg.data.znear + const_offset
+            # depth = self.depth_act(depth_network) * (self.cfg.data.zfar - self.cfg.data.znear) + self.cfg.data.znear
         else:
             depth = self.depth_act(depth_network) * (self.cfg.data.zfar - self.cfg.data.znear) + self.cfg.data.znear
 
         pos = ray_dirs_xy * depth + offset
-
+        # pos = ray_dirs_xy * depth 
         return pos
 
     def forward(self, x, 
@@ -687,7 +703,7 @@ class GaussianSplatPredictor(nn.Module):
                 source_cv2wT_quat=None,
                 focals_pixels=None,
                 activate_output=True):
-
+        
         B = x.shape[0]
         N_views = x.shape[1]
         # UNet attention will reshape outputs so that there is cross-view attention
@@ -710,8 +726,10 @@ class GaussianSplatPredictor(nn.Module):
             assert focals_pixels is None, "Unexpected argument for non-co3d dataset"
 
         x = x.reshape(B*N_views, *x.shape[2:])
+
         if self.cfg.data.origin_distances:
             const_offset = x[:, 3:, ...]
+            const_offset = F.interpolate(const_offset, size=(256, 256), mode='bilinear', align_corners=False)
             x = x[:, :3, ...]
         else:
             const_offset = None
@@ -720,12 +738,13 @@ class GaussianSplatPredictor(nn.Module):
         x = x.contiguous(memory_format=torch.channels_last)
 
         if self.cfg.model.network_with_offset:
-
+            
             split_network_outputs = self.network_with_offset(x,
                                                              film_camera_emb=film_camera_emb,
                                                              N_views_xa=N_views_xa
                                                              )
-
+            
+        
             split_network_outputs = split_network_outputs.split(self.split_dimensions_with_offset, dim=1)
             depth, offset, opacity, scaling, rotation, features_dc = split_network_outputs[:6]
             if self.cfg.model.max_sh_degree > 0:
@@ -734,6 +753,8 @@ class GaussianSplatPredictor(nn.Module):
             pos = self.get_pos_from_network_output(depth, offset, focals_pixels, const_offset=const_offset)
 
         else:
+            
+            
             split_network_outputs = self.network_wo_offset(x, 
                                                            film_camera_emb=film_camera_emb,
                                                            N_views_xa=N_views_xa

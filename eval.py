@@ -235,6 +235,29 @@ def eval_robustness(model, dataloader, device, model_cfg, out_folder=None):
 
             torchvision.utils.save_image(image, os.path.join(out_example, '{0:05d}'.format(r_idx) + ".png"))
             torchvision.utils.save_image(data["gt_images"][0, r_idx, ...], os.path.join(out_example_gt, '{0:05d}'.format(r_idx) + ".png"))
+import os
+import shutil
+import torch
+from huggingface_hub import hf_hub_download
+
+def download_and_save_model(dataset_name, save_dir="models/"):
+
+    os.makedirs(save_dir, exist_ok=True)  # Ensure save directory exists
+
+    # Determine model name based on dataset
+    model_name = dataset_name
+    model_path = hf_hub_download(repo_id="szymanowiczs/splatter-image-v1", filename="model_{}.pth".format('hydrants'))
+
+    # Save model to specified directory
+    local_model_path = os.path.join(save_dir, f"model_{model_name}.pth")
+    shutil.copy(model_path, local_model_path)  # Copy from cache to local dir
+
+    print(f"Model saved locally at: {local_model_path}")
+    return local_model_path
+
+
+
+
 
 @torch.no_grad()
 def main(dataset_name, experiment_path, device_idx, split='test', save_vis=0, out_folder=None):
@@ -243,15 +266,16 @@ def main(dataset_name, experiment_path, device_idx, split='test', save_vis=0, ou
     device = torch.device("cuda:{}".format(device_idx))
     torch.cuda.set_device(device)
 
+    # model_path = download_and_save_model("hydrants")
+    # breakpoint()
+
     if args.experiment_path is None:
-        cfg_path = hf_hub_download(repo_id="szymanowiczs/splatter-image-v1", 
-                                 filename="config_{}.yaml".format(dataset_name))
+        cfg_path = hf_hub_download(repo_id="szymanowiczs/splatter-image-v1", filename="config_{}.yaml".format(dataset_name))
         if dataset_name in ["gso", "objaverse"]:
             model_name = "latest"
         else:
             model_name = dataset_name
-        model_path = hf_hub_download(repo_id="szymanowiczs/splatter-image-v1", 
-                            filename="model_{}.pth".format(model_name))
+        model_path = hf_hub_download(repo_id="szymanowiczs/splatter-image-v1", filename="model_{}.pth".format(model_name))
         
     else:
         cfg_path = os.path.join(experiment_path, ".hydra", "config.yaml")
