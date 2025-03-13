@@ -22,59 +22,6 @@ from scene.gaussian_predictor import GaussianSplatPredictor
 from datasets.dataset_factory import get_dataset
 
 
-
-import os
-import torch
-
-def load_pretrained_model(model, ckpt_path, device):
-    if not os.path.exists(ckpt_path):
-        print(f"Checkpoint not found at {ckpt_path}")
-        return 0.0  # Initialize best_PSNR to 0 if file doesn't exist
-
-    checkpoint = torch.load(ckpt_path, map_location=device)
-
-    if "model_state_dict" not in checkpoint:
-        print("Invalid checkpoint format: 'model_state_dict' key not found.")
-        return 0.0  # Initialize best_PSNR to 0 if checkpoint is invalid
-
-    model_state_dict = model.state_dict()
-    pretrained_dict = checkpoint["model_state_dict"]
-
-    # Find missing keys (new keys in the model that are not in the checkpoint)
-    missing_keys = set(  model_state_dict.keys()  ) - set(pretrained_dict.keys())
-    # Find matching keys and copy their weights
-    matched_dict = {k: v for k, v in pretrained_dict.items() if k in model_state_dict and v.shape == model_state_dict[k].shape}
-    model_state_dict.update(matched_dict)
-    model.load_state_dict(model_state_dict, strict=False)
-    # Initialize missing keys using Xavier initialization
-    for key in missing_keys:
-        param = model_state_dict[key]
-        
-        if param.dim() >= 2:  
-            # Xavier for weight matrices (linear layers, conv layers)
-            torch.nn.init.xavier_uniform_(param)
-        elif param.dim() == 1:  
-            # Use zeros for biases and batchnorm weights
-            torch.nn.init.zeros_(param)
-        else:  
-            # Scalar values (e.g., batchnorm running_mean/running_var)
-            param.fill_(1.0)  # You can also use `torch.nn.init.ones_`
-
-        print(f"Initialized new key randomly: {key}")
-    print(f"Loaded model with {len(matched_dict)} matched keys.")
-    if missing_keys:
-        print(f"Randomly initialized {len(missing_keys)} new keys: {missing_keys}")
-
-    # Retrieve best_PSNR safely
-    best_PSNR = checkpoint.get("best_PSNR", 0.0)  # Default to 0 if missing
-    print(best_PSNR)
-
-    return best_PSNR
-
-
-
-
-
 @hydra.main(version_base=None, config_path='configs', config_name="default_config")
 def main(cfg: DictConfig):
 
@@ -122,30 +69,34 @@ def main(cfg: DictConfig):
                                  betas=cfg.opt.betas)
 
     # Resuming training
-    # if fabric.is_global_zero:
-    #     if os.path.isfile(os.path.join(vis_dir, "model_latest.pth")):
-    #         print('Loading an existing model from ', os.path.join(vis_dir, "model_latest.pth"))
-    #         checkpoint = torch.load(os.path.join(vis_dir, "model_latest.pth"),
-    #                                 map_location=device) 
-    #         try:
-    #             gaussian_predictor.load_state_dict(checkpoint["model_state_dict"])
-    #         except RuntimeError:
-    #             gaussian_predictor.load_state_dict(checkpoint["model_state_dict"],
-    #                                             strict=False)
-    #             print("Warning, model mismatch - was this expected?")
-    #         first_iter = checkpoint["iteration"]
-    #         best_PSNR = checkpoint["best_PSNR"] 
-    #         print('Loaded model')
-    #     # Resuming from checkpoint
-    #     elif cfg.opt.pretrained_ckpt is not None:
-
-
-    # Path to the checkpoint
-    pretrained_ckpt_path = "/data2/badrinath/splatter-image/models/model_hydrants.pth"
-
-    best_PSNR = load_pretrained_model(gaussian_predictor, pretrained_ckpt_path, device)
-        # else:
-        #     best_PSNR = 0.0
+    if fabric.is_global_zero:
+        if os.path.isfile(os.path.join(vis_dir, "model_latest.pth")):
+            print('Loading an existing model from ', os.path.join(vis_dir, "model_latest.pth"))
+            checkpoint = torch.load(os.path.join(vis_dir, "model_latest.pth"),
+                                    map_location=device) 
+            try:
+                gaussian_predictor.load_state_dict(checkpoint["model_state_dict"])
+            except RuntimeError:
+                gaussian_predictor.load_state_dict(checkpoint["model_state_dict"],
+                                                strict=False)
+                print("Warning, model mismatch - was this expected?")
+            first_iter = checkpoint["iteration"]
+            best_PSNR = checkpoint["best_PSNR"] 
+            print('Loaded model')
+        # Resuming from checkpoint
+        elif cfg.opt.pretrained_ckpt is not None:
+            pretrained_ckpt_dir = os.path.join(cfg.opt.pretrained_ckpt, "model_latest.pth")
+            checkpoint = torch.load(pretrained_ckpt_dir,
+                                    map_location=device) 
+            try:
+                gaussian_predictor.load_state_dict(checkpoint["model_state_dict"])
+            except RuntimeError:
+                gaussian_predictor.load_state_dict(checkpoint["model_state_dict"],
+                                                strict=False)
+            best_PSNR = checkpoint["best_PSNR"] 
+            print('Loaded model from a pretrained checkpoint')
+        else:
+            best_PSNR = 0.0
 
     if cfg.opt.ema.use and fabric.is_global_zero:
         ema = EMA(gaussian_predictor, 
