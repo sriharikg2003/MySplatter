@@ -4,3 +4,4 @@ experiments_out
 configs/hydra/cluster.yaml
 models/
 *.out
+gaussian-splatting
