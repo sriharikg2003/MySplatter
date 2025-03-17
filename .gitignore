@@ -9,3 +9,4 @@ pytorch3d/
 demo_examples/
 datasets/viewlist_src_nmr.txt
 scores.txt
+out/
