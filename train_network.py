@@ -72,7 +72,7 @@ def load_pretrained_model(model, ckpt_path, device):
     return best_PSNR
 
 
-
+    # go
 
 
 @hydra.main(version_base=None, config_path='configs', config_name="default_config")
