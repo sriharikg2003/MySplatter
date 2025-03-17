@@ -9,3 +9,4 @@ gaussian-splatting/
 pytorch3d/
 gaussian-splatting/
 demo_examples/
+models/model_hydrants.pth
