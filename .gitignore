@@ -3,5 +3,6 @@ __pycache__
 experiments_out
 configs/hydra/cluster.yaml
 models/
+gaussian-splatting/
 *.out
-gaussian-splatting
+/data2/badrinath/splatter-image/models/model_hydrants.pth
