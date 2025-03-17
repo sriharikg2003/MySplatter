@@ -471,6 +471,7 @@ class SingleImageSongUNetPredictor(nn.Module):
             nn.init.xavier_uniform_(
                 self.out_double.weight[start_channels:start_channels+out_channel,
                                 :, :, :], s)
+            # double
             nn.init.constant_(
                 self.out_double.bias[start_channels:start_channels+out_channel], b)
             start_channels += out_channel
