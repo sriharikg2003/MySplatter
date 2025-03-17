@@ -6,6 +6,6 @@ models/
 gaussian-splatting/
 *.out
 /data2/badrinath/splatter-image/models/model_hydrants.pth
-pytorch3d
+pytorch3d/
 gaussian-splatting/
-demo_examples
+demo_examples/
