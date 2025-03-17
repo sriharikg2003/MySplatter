@@ -1,8 +1,12 @@
-__pycache__
-*/__pycache__
+_pycache_
+*/_pycache_
 experiments_out
 configs/hydra/cluster.yaml
 models/
 gaussian-splatting/
 *.out
 /data2/badrinath/splatter-image/models/model_hydrants.pth
+pytorch3d/
+gaussian-splatting/
+demo_examples/
+models/model_hydrants.pth
