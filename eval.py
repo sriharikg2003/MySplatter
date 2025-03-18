@@ -37,7 +37,7 @@ def evaluate_dataset(model, dataloader, device, model_cfg, save_vis=0, out_folde
     Args:
         save_vis: how many examples will have visualisations saved
     """
-
+    
     if save_vis > 0:
 
         os.makedirs(out_folder, exist_ok=True)
@@ -93,17 +93,49 @@ def evaluate_dataset(model, dataloader, device, model_cfg, save_vis=0, out_folde
             os.makedirs(out_example, exist_ok=True)
 
         # batch has length 1, the first image is conditioning
-        reconstruction = model(input_images,
+        batch_size = data["gt_images"].shape[0]
+        num_channels = 1  
+        height, width = 128, 128
+        fraction_to_drop = 0.6 
+
+    
+        num_pixels = height * width
+        num_to_drop = int(num_pixels * fraction_to_drop)  
+        mask = torch.ones((batch_size, num_channels, height, width))
+
+        for i in range(batch_size):
+            idx = torch.randperm(num_pixels)[:num_to_drop] 
+            mask[i].view(-1)[idx] = 0 
+        
+
+
+        gaussian_splats = model(input_images,
                                data["view_to_world_transforms"][:, :model_cfg.data.input_images, ...],
                                rot_transform_quats,
-                               focals_pixels_pred)
+                               focals_pixels_pred,mask)
+
+
+
+        gaussian_splats['xyz']= gaussian_splats['xyz'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3)
+
+        gaussian_splats['rotation']= gaussian_splats['rotation'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 4)
+
+        gaussian_splats['features_dc']= gaussian_splats['features_dc'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 1,3)
+
+        gaussian_splats['opacity']= gaussian_splats['opacity'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 1)
+
+        gaussian_splats['scaling']= gaussian_splats['scaling'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3)
+
+        gaussian_splats['features_rest']= gaussian_splats['features_rest'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3 ,3)
+
+
 
         for r_idx in range( data["gt_images"].shape[1]):
             if "focals_pixels" in data.keys():
                 focals_pixels_render = data["focals_pixels"][0, r_idx]
             else:
                 focals_pixels_render = None
-            image = render_predicted({k: v[0].contiguous() for k, v in reconstruction.items()},
+            image = render_predicted({k: v[0].contiguous() for k, v in gaussian_splats.items()},
                                      data["world_view_transforms"][0, r_idx],
                                      data["full_proj_transforms"][0, r_idx], 
                                      data["camera_centers"][0, r_idx],
@@ -112,7 +144,7 @@ def evaluate_dataset(model, dataloader, device, model_cfg, save_vis=0, out_folde
                                      focals_pixels=focals_pixels_render)["render"]
 
             if d_idx < save_vis:
-                # vis_image_preds(reconstruction, out_example)
+                # vis_image_preds(gaussian_splats, out_example)
                 torchvision.utils.save_image(image, os.path.join(out_example, '{0:05d}'.format(r_idx) + ".png"))
                 torchvision.utils.save_image(data["gt_images"][0, r_idx, ...], os.path.join(out_example_gt, '{0:05d}'.format(r_idx) + ".png"))
 
@@ -213,19 +245,44 @@ def eval_robustness(model, dataloader, device, model_cfg, out_folder=None):
 
         os.makedirs(out_example_gt, exist_ok=True)
         os.makedirs(out_example, exist_ok=True)
-
         # batch has length 1, the first image is conditioning
-        reconstruction = model(input_images,
+        batch_size = data["gt_images"].shape[0]
+        num_channels = 1  
+        height, width = 128, 128
+        fraction_to_drop = 0.6 
+
+    
+        num_pixels = height * width
+        num_to_drop = int(num_pixels * fraction_to_drop)  
+        mask = torch.ones((batch_size, num_channels, height, width))
+
+        for i in range(batch_size):
+            idx = torch.randperm(num_pixels)[:num_to_drop] 
+            mask[i].view(-1)[idx] = 0 
+
+        
+        # batch has length 1, the first image is conditioning
+        gaussian_splats = model(input_images,
                                 data["view_to_world_transforms"][:, :model_cfg.data.input_images, ...],
                                 rot_transform_quats,
-                                focals_pixels_pred)
+                                focals_pixels_pred ,mask)
+        gaussian_splats['xyz']= gaussian_splats['xyz'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3)
 
+        gaussian_splats['rotation']= gaussian_splats['rotation'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 4)
+
+        gaussian_splats['features_dc']= gaussian_splats['features_dc'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 1,3)
+
+        gaussian_splats['opacity']= gaussian_splats['opacity'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 1)
+
+        gaussian_splats['scaling']= gaussian_splats['scaling'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3)
+
+        gaussian_splats['features_rest']= gaussian_splats['features_rest'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3 ,3)
         for r_idx in range( data["gt_images"].shape[1]):
             if "focals_pixels" in data.keys():
                 focals_pixels_render = data["focals_pixels"][0, r_idx]
             else:
                 focals_pixels_render = None
-            image = render_predicted({k: v[0].contiguous() for k, v in reconstruction.items()},
+            image = render_predicted({k: v[0].contiguous() for k, v in gaussian_splats.items()},
                                         data["world_view_transforms"][0, r_idx],
                                         data["full_proj_transforms"][0, r_idx], 
                                         data["camera_centers"][0, r_idx],
@@ -267,7 +324,7 @@ def main(dataset_name, experiment_path, device_idx, split='test', save_vis=0, ou
     torch.cuda.set_device(device)
 
     # model_path = download_and_save_model("hydrants")
-    # breakpoint()
+    # 
 
     if args.experiment_path is None:
         cfg_path = hf_hub_download(repo_id="szymanowiczs/splatter-image-v1", filename="config_{}.yaml".format(dataset_name))

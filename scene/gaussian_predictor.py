@@ -335,8 +335,9 @@ class SongUNet(nn.Module):
 
         # Encoder.
         self.enc = torch.nn.ModuleDict()
-        cout = in_channels
-        caux = in_channels
+
+        cout = in_channels + 1
+        caux = in_channels + 1
         for level, mult in enumerate(channel_mult):
             res = img_resolution >> level
             if level == 0:
@@ -378,7 +379,7 @@ class SongUNet(nn.Module):
                 self.dec[f'{res}x{res}_aux_norm'] = GroupNorm(num_channels=cout, eps=1e-6)
                 self.dec[f'{res}x{res}_aux_conv'] = Conv2d(in_channels=cout, out_channels=out_channels, kernel=3, init_weight=0.2, **init)# init_zero)
 
-    def forward(self, x, film_camera_emb=None, N_views_xa=1):
+    def forward(self, x,mask, film_camera_emb=None, N_views_xa=1):
 
         emb = None
 
@@ -391,7 +392,12 @@ class SongUNet(nn.Module):
             emb = film_camera_emb
 
         # Encoder.
+
         skips = []
+        
+        mask = mask.to(x.device)  # Move mask to the same device as x
+        x = torch.cat([x, mask], dim=1)  # Concatenate safely
+
         aux = x
         for name, block in self.enc.items():
             if 'aux_down' in name:
@@ -404,7 +410,7 @@ class SongUNet(nn.Module):
                 x = block(x, emb=emb, N_views_xa=N_views_xa) if isinstance(block, UNetBlock) \
                     else block(x, N_views_xa=N_views_xa)
                 skips.append(x)
-
+        
         # Decoder.
         aux = None
         tmp = None
@@ -423,7 +429,8 @@ class SongUNet(nn.Module):
                     # but it's not good for gradient flow and background features
                     x = torch.cat([x, skips.pop()], dim=1)
                 x = block(x, emb=emb, N_views_xa=N_views_xa)
-        return aux
+
+        return aux*mask
 
 # ================== End of implementation taken from EDM ===============
 # NVIDIA copyright does not apply to the code below this line
@@ -461,8 +468,9 @@ class SingleImageSongUNetPredictor(nn.Module):
                 self.out.bias[start_channels:start_channels+out_channel], b)
             start_channels += out_channel
 
-    def forward(self, x, film_camera_emb=None, N_views_xa=1):
-        x = self.encoder(x, 
+    def forward(self, x, mask , film_camera_emb=None, N_views_xa=1):
+        
+        x = self.encoder(x,mask, 
                          film_camera_emb=film_camera_emb,
                          N_views_xa=N_views_xa)
 
@@ -686,6 +694,7 @@ class GaussianSplatPredictor(nn.Module):
                 source_cameras_view_to_world, 
                 source_cv2wT_quat=None,
                 focals_pixels=None,
+                mask = None,
                 activate_output=True):
 
         B = x.shape[0]
@@ -721,9 +730,10 @@ class GaussianSplatPredictor(nn.Module):
 
         if self.cfg.model.network_with_offset:
 
-            split_network_outputs = self.network_with_offset(x,
+            split_network_outputs = self.network_with_offset(x,mask,
                                                              film_camera_emb=film_camera_emb,
-                                                             N_views_xa=N_views_xa
+                                                             N_views_xa=N_views_xa,
+                                                             
                                                              )
 
             split_network_outputs = split_network_outputs.split(self.split_dimensions_with_offset, dim=1)
@@ -734,7 +744,7 @@ class GaussianSplatPredictor(nn.Module):
             pos = self.get_pos_from_network_output(depth, offset, focals_pixels, const_offset=const_offset)
 
         else:
-            split_network_outputs = self.network_wo_offset(x, 
+            split_network_outputs = self.network_wo_offset(x, mask,
                                                            film_camera_emb=film_camera_emb,
                                                            N_views_xa=N_views_xa
                                                            ).split(self.split_dimensions_without_offset, dim=1)
