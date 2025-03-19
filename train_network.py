@@ -194,8 +194,8 @@ def main(cfg: DictConfig):
                                                 focals_pixels_pred, mask)
             # @MODIFIED
             
-
-            gaussian_splats = pruned_gaussians(gaussian_splats ,mask ,batch_size)
+            
+            gaussian_splats = pruned_gaussians(gaussian_splats ,mask ,data["gt_images"].shape[0])
 
 
             if cfg.data.category == "hydrants" or cfg.data.category == "teddybears":
@@ -327,7 +327,8 @@ def main(cfg: DictConfig):
                                                         vis_data["view_to_world_transforms"][:, :cfg.data.input_images, ...],
                                                         rot_transform_quats,
                                                         focals_pixels_pred,mask)
-                    gaussian_splats = pruned_gaussians(gaussian_splats ,mask ,batch_size)
+      
+                    gaussian_splats_vis = pruned_gaussians(gaussian_splats_vis ,mask ,vis_data["gt_images"].shape[0])
 
 
 

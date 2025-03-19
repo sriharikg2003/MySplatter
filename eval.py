@@ -108,7 +108,7 @@ def evaluate_dataset(model, dataloader, device, model_cfg, save_vis=0, out_folde
                                rot_transform_quats,
                                focals_pixels_pred,mask)
 
-        gaussian_splats = pruned_gaussians(gaussian_splats ,mask ,batch_size)
+        gaussian_splats = pruned_gaussians(gaussian_splats ,mask , data["gt_images"].shape[0])
 
 
 
@@ -239,7 +239,7 @@ def eval_robustness(model, dataloader, device, model_cfg, out_folder=None):
                                 data["view_to_world_transforms"][:, :model_cfg.data.input_images, ...],
                                 rot_transform_quats,
                                 focals_pixels_pred ,mask)
-        gaussian_splats = pruned_gaussians(gaussian_splats ,mask ,batch_size)
+        gaussian_splats = pruned_gaussians(gaussian_splats ,mask ,data["gt_images"].shape[0])
 
         for r_idx in range( data["gt_images"].shape[1]):
             if "focals_pixels" in data.keys():
