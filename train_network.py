@@ -181,11 +181,11 @@ def main(cfg: DictConfig):
 
      
 
-            mask = getmask(batch_size = data["gt_images"].shape[0],
+            mask , fraction= getmask(batch_size = data["gt_images"].shape[0],
                             num_channels = 1 ,
                             height = 128 ,
                             width = 128 ,
-                            fraction_to_drop = None )
+                            fraction_to_drop = None , return_fraction = True)
             
             # pass mask here 
             gaussian_splats = gaussian_predictor(input_images,
@@ -292,6 +292,8 @@ def main(cfg: DictConfig):
                 if (iteration % cfg.logging.render_log == 0 or iteration == 1) and fabric.is_global_zero:
                     wandb.log({"render": wandb.Image(image.clamp(0.0, 1.0).permute(1, 2, 0).detach().cpu().numpy())}, step=iteration)
                     wandb.log({"gt": wandb.Image(gt_image.permute(1, 2, 0).detach().cpu().numpy())}, step=iteration)
+                    wandb.log({"mask_image": wandb.Image(mask[0,...].detach().cpu().numpy())}, step=iteration)
+                    wandb.log({"fraction": fraction }, step=iteration)
                 if (iteration % cfg.logging.loop_log == 0 or iteration == 1) and fabric.is_global_zero:
                     # torch.cuda.empty_cache()
                     try:

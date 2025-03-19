@@ -1,7 +1,7 @@
 import torch
 import random
 
-def getmask(batch_size ,num_channels ,height ,width ,fraction_to_drop = None ):
+def getmask(batch_size ,num_channels ,height ,width ,fraction_to_drop = None ,return_fraction=False):
     fraction_to_drop = random.uniform(0.0, 0.8) 
     num_pixels = height * width
     num_to_drop = int(num_pixels * fraction_to_drop)  
@@ -11,6 +11,8 @@ def getmask(batch_size ,num_channels ,height ,width ,fraction_to_drop = None ):
     for i in range(batch_size):
         idx = torch.randperm(num_pixels)[:num_to_drop] 
         mask[i].view(-1)[idx] = 0 
+    if return_fraction:
+        return mask, fraction_to_drop
     return mask
 
 def pruned_gaussians(gaussian_splats ,mask ,batch_size):
