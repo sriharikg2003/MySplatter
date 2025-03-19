@@ -15,12 +15,11 @@ from omegaconf import DictConfig, OmegaConf
 from utils.general_utils import safe_state
 from utils.loss_utils import l1_loss, l2_loss
 import lpips as lpips_lib
-
+from utils.my_utils import getmask, pruned_gaussians
 from eval import evaluate_dataset
 from gaussian_renderer import render_predicted
 from scene.gaussian_predictor import GaussianSplatPredictor
 from datasets.dataset_factory import get_dataset
-
 
 @hydra.main(version_base=None, config_path='configs', config_name="default_config")
 def main(cfg: DictConfig):
@@ -180,22 +179,13 @@ def main(cfg: DictConfig):
             
             # @MODIFIED
 
-            batch_size = data["gt_images"].shape[0]
-            num_channels = 1  
-            height, width = 128, 128
-            fraction_to_drop = 0.6 
+     
 
-       
-            num_pixels = height * width
-            num_to_drop = int(num_pixels * fraction_to_drop)  
-            mask = torch.ones((batch_size, num_channels, height, width))
-
-            for i in range(batch_size):
-                idx = torch.randperm(num_pixels)[:num_to_drop] 
-                mask[i].view(-1)[idx] = 0 
-
-
-
+            mask = getmask(batch_size = data["gt_images"].shape[0],
+                            num_channels = 1 ,
+                            height = 128 ,
+                            width = 128 ,
+                            fraction_to_drop = None )
             
             # pass mask here 
             gaussian_splats = gaussian_predictor(input_images,
@@ -205,17 +195,7 @@ def main(cfg: DictConfig):
             # @MODIFIED
             
 
-            gaussian_splats['xyz']= gaussian_splats['xyz'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3)
-
-            gaussian_splats['rotation']= gaussian_splats['rotation'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 4)
-
-            gaussian_splats['features_dc']= gaussian_splats['features_dc'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 1,3)
-
-            gaussian_splats['opacity']= gaussian_splats['opacity'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 1)
-
-            gaussian_splats['scaling']= gaussian_splats['scaling'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3)
-
-            gaussian_splats['features_rest']= gaussian_splats['features_rest'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3 ,3)
+            gaussian_splats = pruned_gaussians(gaussian_splats ,mask ,batch_size)
 
 
             if cfg.data.category == "hydrants" or cfg.data.category == "teddybears":
@@ -335,36 +315,19 @@ def main(cfg: DictConfig):
                     else:
                         focals_pixels_pred = None
                         input_images = vis_data["gt_images"][:, :cfg.data.input_images, ...]
-                    batch_size = vis_data["gt_images"].shape[0]
-                    num_channels = 1  
-                    height, width = 128, 128
-                    fraction_to_drop = 0.6 
 
-            
-                    num_pixels = height * width
-                    num_to_drop = int(num_pixels * fraction_to_drop)  
-                    mask = torch.ones((batch_size, num_channels, height, width))
-
-                    for i in range(batch_size):
-                        idx = torch.randperm(num_pixels)[:num_to_drop] 
-                        mask[i].view(-1)[idx] = 0 
+                    mask = getmask(batch_size = vis_data["gt_images"].shape[0],
+                                    num_channels = 1 ,
+                                    height = 128 ,
+                                    width = 128 ,
+                                    fraction_to_drop = None )
 
 
                     gaussian_splats_vis = gaussian_predictor(input_images,
                                                         vis_data["view_to_world_transforms"][:, :cfg.data.input_images, ...],
                                                         rot_transform_quats,
                                                         focals_pixels_pred,mask)
-                    gaussian_splats_vis['xyz']= gaussian_splats_vis['xyz'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3)
-
-                    gaussian_splats_vis['rotation']= gaussian_splats_vis['rotation'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 4)
-
-                    gaussian_splats_vis['features_dc']= gaussian_splats_vis['features_dc'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 1,3)
-
-                    gaussian_splats_vis['opacity']= gaussian_splats_vis['opacity'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 1)
-
-                    gaussian_splats_vis['scaling']= gaussian_splats_vis['scaling'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3)
-
-                    gaussian_splats_vis['features_rest']= gaussian_splats_vis['features_rest'][mask.bool().reshape(batch_size, -1), :].reshape(batch_size, -1, 3 ,3)
+                    gaussian_splats = pruned_gaussians(gaussian_splats ,mask ,batch_size)
 
 
 
