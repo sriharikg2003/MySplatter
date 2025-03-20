@@ -336,8 +336,8 @@ class SongUNet(nn.Module):
         # Encoder.
         self.enc = torch.nn.ModuleDict()
 
-        cout = in_channels + 1
-        caux = in_channels + 1
+        cout = in_channels 
+        caux = in_channels 
         for level, mult in enumerate(channel_mult):
             res = img_resolution >> level
             if level == 0:
@@ -448,7 +448,7 @@ class SingleImageSongUNetPredictor(nn.Module):
             emb_dim_in = 6 * cfg.cam_embd.dimension
 
         self.encoder = SongUNet(cfg.data.training_resolution, 
-                                in_channels, 
+                                in_channels+1, 
                                 sum(out_channels),
                                 model_channels=cfg.model.base_dim,
                                 num_blocks=cfg.model.num_blocks,

@@ -20,6 +20,17 @@ from eval import evaluate_dataset
 from gaussian_renderer import render_predicted
 from scene.gaussian_predictor import GaussianSplatPredictor
 from datasets.dataset_factory import get_dataset
+import torch.nn.init as init
+
+
+def initialize_weights_with_xavier(model):
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            if "weight" in name:
+                init.xavier_uniform_(param)
+            elif "bias" in name:
+                param.data.fill_(0.0)
+
 
 @hydra.main(version_base=None, config_path='configs', config_name="default_config")
 def main(cfg: DictConfig):
@@ -67,33 +78,54 @@ def main(cfg: DictConfig):
     optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15, 
                                  betas=cfg.opt.betas)
 
-    # Resuming training
     if fabric.is_global_zero:
-        if os.path.isfile(os.path.join(vis_dir, "model_latest.pth")):
-            print('Loading an existing model from ', os.path.join(vis_dir, "model_latest.pth"))
-            checkpoint = torch.load(os.path.join(vis_dir, "model_latest.pth"),
-                                    map_location=device) 
-            try:
-                gaussian_predictor.load_state_dict(checkpoint["model_state_dict"])
-            except RuntimeError:
-                gaussian_predictor.load_state_dict(checkpoint["model_state_dict"],
-                                                strict=False)
-                print("Warning, model mismatch - was this expected?")
+        checkpoint_path = os.path.join(vis_dir, "model_latest.pth")
+        
+        if os.path.isfile(checkpoint_path):
+            print('Loading an existing model from', checkpoint_path)
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+            
+            model_state_dict = checkpoint["model_state_dict"]
+            current_state_dict = gaussian_predictor.state_dict()
+
+            # Load weights that match the shape, initialize others with Xavier
+            for key, param in current_state_dict.items():
+                if key in model_state_dict and model_state_dict[key].shape == param.shape:
+                    param.data.copy_(model_state_dict[key])
+                else:
+                    print(f"Initializing {key} with Xavier initialization")
+                    if "weight" in key:
+                        init.xavier_uniform_(param)
+                    elif "bias" in key:
+                        param.data.fill_(0.0)
+
+            gaussian_predictor.load_state_dict(current_state_dict, strict=False)
             first_iter = checkpoint["iteration"]
-            best_PSNR = checkpoint["best_PSNR"] 
+            best_PSNR = checkpoint["best_PSNR"]
             print('Loaded model')
-        # Resuming from checkpoint
+        
+        # Resuming from a pretrained checkpoint
         elif cfg.opt.pretrained_ckpt is not None:
             pretrained_ckpt_dir = os.path.join(cfg.opt.pretrained_ckpt, "model_latest.pth")
-            checkpoint = torch.load(pretrained_ckpt_dir,
-                                    map_location=device) 
-            try:
-                gaussian_predictor.load_state_dict(checkpoint["model_state_dict"])
-            except RuntimeError:
-                gaussian_predictor.load_state_dict(checkpoint["model_state_dict"],
-                                                strict=False)
-            best_PSNR = checkpoint["best_PSNR"] 
+            checkpoint = torch.load(pretrained_ckpt_dir, map_location=device)
+
+            model_state_dict = checkpoint["model_state_dict"]
+            current_state_dict = gaussian_predictor.state_dict()
+
+            for key, param in current_state_dict.items():
+                if key in model_state_dict and model_state_dict[key].shape == param.shape:
+                    param.data.copy_(model_state_dict[key])
+                else:
+                    print(f"Initializing {key} with Xavier initialization")
+                    if "weight" in key:
+                        init.xavier_uniform_(param)
+                    elif "bias" in key:
+                        param.data.fill_(0.0)
+
+            gaussian_predictor.load_state_dict(current_state_dict, strict=False)
+            best_PSNR = checkpoint["best_PSNR"]
             print('Loaded model from a pretrained checkpoint')
+
         else:
             best_PSNR = 0.0
 

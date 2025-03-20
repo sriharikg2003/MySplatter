@@ -2,7 +2,7 @@ import torch
 import random
 
 def getmask(batch_size ,num_channels ,height ,width ,fraction_to_drop = None ,return_fraction=False):
-    fraction_to_drop = random.uniform(0.0, 0.8) 
+    fraction_to_drop = random.choice([0.0, 0.1, 0.2, 0.05, 0.15 , 0.25 , 0.3]) 
     num_pixels = height * width
     num_to_drop = int(num_pixels * fraction_to_drop)  
     mask = torch.ones((batch_size, num_channels, height, width))
