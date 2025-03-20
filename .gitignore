@@ -12,3 +12,4 @@ scores.txt
 out/
 *.out
 original_model/
+model_hydrants.pth
